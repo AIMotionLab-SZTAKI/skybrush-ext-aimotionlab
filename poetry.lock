@@ -216,18 +216,18 @@ files = [
 
 [[package]]
 name = "blinker"
-version = "1.6"
+version = "1.6.1"
 description = "Fast, simple object-to-object and broadcast signaling"
 category = "main"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "blinker-1.6-py3-none-any.whl", hash = "sha256:eeebd5dfc782e1817fe4261ce79936c8c8cefb90d685caf50cec458029f773c1"},
-    {file = "blinker-1.6.tar.gz", hash = "sha256:5874afe21df4bae8885d31a0a6c4b5861910a575eae6176f051fbb9a6571481b"},
+    {file = "blinker-1.6.1-py3-none-any.whl", hash = "sha256:8fa2dc7c28c15c8ddfd8b3a21834790984c7e4a89b336dc3f45eeb70e0c5a407"},
+    {file = "blinker-1.6.1.tar.gz", hash = "sha256:2ddfa223483ce8f24ecd2723e0e27cd4388ef19bef1d76b09a3dae93033db231"},
 ]
 
 [package.dependencies]
-typing-extensions = "*"
+typing-extensions = ">=4.2"
 
 [[package]]
 name = "certifi"
@@ -631,7 +631,7 @@ reference = "fury"
 
 [[package]]
 name = "flockwave-server"
-version = "2.11.0"
+version = "2.12.0"
 description = "Skybrush server component"
 category = "dev"
 optional = false
@@ -686,7 +686,7 @@ pro = ["skybrush-ext-map-cache (>=1.0.0,<2.0.0)", "skybrush-ext-sidekick (>=1.0.
 type = "git"
 url = "https://github.com/skybrush-io/skybrush-server"
 reference = "main"
-resolved_reference = "c28ffefb99f4b55c735c152694a8879dbbcb6224"
+resolved_reference = "f212e955ac2a44a51fea6083b88895fcd07b48a0"
 
 [[package]]
 name = "flockwave-spec"
@@ -764,14 +764,14 @@ files = [
 
 [[package]]
 name = "httpcore"
-version = "0.16.3"
+version = "0.17.0"
 description = "A minimal low-level HTTP client."
 category = "dev"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "httpcore-0.16.3-py3-none-any.whl", hash = "sha256:da1fb708784a938aa084bde4feb8317056c55037247c787bd7e19eb2c2949dc0"},
-    {file = "httpcore-0.16.3.tar.gz", hash = "sha256:c5d6f04e2fc530f39e0c077e6a30caa53f1451096120f1f38b954afd0b17c0cb"},
+    {file = "httpcore-0.17.0-py3-none-any.whl", hash = "sha256:0fdfea45e94f0c9fd96eab9286077f9ff788dd186635ae61b312693e4d943599"},
+    {file = "httpcore-0.17.0.tar.gz", hash = "sha256:cc045a3241afbf60ce056202301b4d8b6af08845e3294055eb26b09913ef903c"},
 ]
 
 [package.dependencies]
@@ -786,25 +786,25 @@ socks = ["socksio (>=1.0.0,<2.0.0)"]
 
 [[package]]
 name = "httpx"
-version = "0.23.3"
+version = "0.24.0"
 description = "The next generation HTTP client."
 category = "dev"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "httpx-0.23.3-py3-none-any.whl", hash = "sha256:a211fcce9b1254ea24f0cd6af9869b3d29aba40154e947d2a07bb499b3e310d6"},
-    {file = "httpx-0.23.3.tar.gz", hash = "sha256:9818458eb565bb54898ccb9b8b251a28785dd4a55afbc23d0eb410754fe7d0f9"},
+    {file = "httpx-0.24.0-py3-none-any.whl", hash = "sha256:447556b50c1921c351ea54b4fe79d91b724ed2b027462ab9a329465d147d5a4e"},
+    {file = "httpx-0.24.0.tar.gz", hash = "sha256:507d676fc3e26110d41df7d35ebd8b3b8585052450f4097401c9be59d928c63e"},
 ]
 
 [package.dependencies]
 certifi = "*"
-httpcore = ">=0.15.0,<0.17.0"
-rfc3986 = {version = ">=1.3,<2", extras = ["idna2008"]}
+httpcore = ">=0.15.0,<0.18.0"
+idna = "*"
 sniffio = "*"
 
 [package.extras]
 brotli = ["brotli", "brotlicffi"]
-cli = ["click (>=8.0.0,<9.0.0)", "pygments (>=2.0.0,<3.0.0)", "rich (>=10,<13)"]
+cli = ["click (>=8.0.0,<9.0.0)", "pygments (>=2.0.0,<3.0.0)", "rich (>=10,<14)"]
 http2 = ["h2 (>=3,<5)"]
 socks = ["socksio (>=1.0.0,<2.0.0)"]
 
@@ -872,14 +872,14 @@ files = [
 
 [[package]]
 name = "importlib-metadata"
-version = "6.1.0"
+version = "6.3.0"
 description = "Read metadata from Python packages"
 category = "main"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "importlib_metadata-6.1.0-py3-none-any.whl", hash = "sha256:ff80f3b5394912eb1b108fcfd444dc78b7f1f3e16b16188054bd01cb9cb86f09"},
-    {file = "importlib_metadata-6.1.0.tar.gz", hash = "sha256:43ce9281e097583d758c2c708c4376371261a02c34682491a8e98352365aad20"},
+    {file = "importlib_metadata-6.3.0-py3-none-any.whl", hash = "sha256:8f8bd2af397cf33bd344d35cfe7f489219b7d14fc79a3f854b75b8417e9226b0"},
+    {file = "importlib_metadata-6.3.0.tar.gz", hash = "sha256:23c2bcae4762dfb0bbe072d358faec24957901d75b6c4ab11172c0c982532402"},
 ]
 
 [package.dependencies]
@@ -1072,18 +1072,12 @@ category = "main"
 optional = false
 python-versions = "*"
 files = [
-    {file = "motioncapture-1.0a1-cp36-cp36m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5112ee59079b57d2d542557633c5649bfd2bb982736444d1b23cc5456ad5c877"},
-    {file = "motioncapture-1.0a1-cp36-cp36m-win_amd64.whl", hash = "sha256:25d956c17a8fc99f26a699db1f99c13c0d11dd11978e0d22d7100abecbde7f89"},
-    {file = "motioncapture-1.0a1-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1e6695e2981912543cd5ce2a30b6ec455e23b9308bb537104e32dc1917d4e1e2"},
-    {file = "motioncapture-1.0a1-cp37-cp37m-win_amd64.whl", hash = "sha256:810acae3b7069a1394ca09bef6893089bc682d6a798e357c189ecae6801cd12d"},
-    {file = "motioncapture-1.0a1-cp38-cp38-macosx_10_15_x86_64.whl", hash = "sha256:78c295227c60ece9e58b19426b4875742b580abe3b71e066d29311e3f8d03a37"},
-    {file = "motioncapture-1.0a1-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7316dd5f193aafc6f678b53faaa1b10175a33d0ee03ed6e80ec16953fcbe1201"},
-    {file = "motioncapture-1.0a1-cp38-cp38-win_amd64.whl", hash = "sha256:d97630da23166a5fc289d48c4b282227759e5979d0e279823a0a753328b01769"},
-    {file = "motioncapture-1.0a1-cp39-cp39-macosx_10_15_x86_64.whl", hash = "sha256:c669e911a805bc22caa55125568bb51ba65380cdcef48a2ee3e2371d53118999"},
-    {file = "motioncapture-1.0a1-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0c15e91eb2d28979ec279a12ed30c67d0e4e055ac33bea5b8e7f17feba4833c7"},
-    {file = "motioncapture-1.0a1-cp39-cp39-win_amd64.whl", hash = "sha256:7fecb1f24cb5bb6f9d9cd7a46c35d7052cb97021d5658535ebb5882ee1c6d87b"},
-    {file = "motioncapture-1.0a1.tar.gz", hash = "sha256:b6d1aeb0bfca47f7b1f3667c8bfd39f79e466e86979001ad7de77c09c49ca321"},
+    {file = "motioncapture-1.0a1-cp310-cp310-linux_x86_64.whl", hash = "sha256:f2e05699bdf087bf272ca12bc0d46c7ceb71f7710100a0e0f9f4c4f5720539c1"},
 ]
+
+[package.source]
+type = "file"
+url = "../libmotioncapture/dist/motioncapture-1.0a1-cp310-cp310-linux_x86_64.whl"
 
 [[package]]
 name = "msgpack"
@@ -1574,24 +1568,6 @@ trio = ">=0.9.0"
 docs = ["pydata_sphinx_theme"]
 
 [[package]]
-name = "rfc3986"
-version = "1.5.0"
-description = "Validating URI References per RFC 3986"
-category = "dev"
-optional = false
-python-versions = "*"
-files = [
-    {file = "rfc3986-1.5.0-py2.py3-none-any.whl", hash = "sha256:a86d6e1f5b1dc238b218b012df0aa79409667bb209e58da56d0b94704e712a97"},
-    {file = "rfc3986-1.5.0.tar.gz", hash = "sha256:270aaf10d87d0d4e095063c65bf3ddbc6ee3d0b226328ce21e036f946e421835"},
-]
-
-[package.dependencies]
-idna = {version = "*", optional = true, markers = "extra == \"idna2008\""}
-
-[package.extras]
-idna2008 = ["idna"]
-
-[[package]]
 name = "setuptools"
 version = "67.6.1"
 description = "Easily download, build, install, upgrade, and uninstall Python packages"
@@ -1782,4 +1758,4 @@ testing = ["big-O", "flake8 (<5)", "jaraco.functools", "jaraco.itertools", "more
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "f9ddd34036ffdd9e1cb982648948abde9cc051abcdbe0c605fef6ab63ce7c57c"
+content-hash = "9e1aa5aa6a8c927371123f17ce8f575e1468ca1f0771bcec1b7caa6d69af921e"
