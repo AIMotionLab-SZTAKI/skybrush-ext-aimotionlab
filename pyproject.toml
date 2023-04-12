@@ -1,13 +1,14 @@
 [tool.poetry]
 
-name = "skybrush-ext-libmotioncapture"
+name = "skybrush-ext-aimotionlab"
 version = "1.0.0"
-description = "libmotioncapture mocap support for Skybrush Server"
-authors = ["Tamas Nepusz <ntamas@gmail.com>"]
+description = "libmotioncapture mocap support and aimotionlab extension for Skybrush Server"
+authors = ["Tamas Nepusz <ntamas@gmail.com>", "Antal Péter <antalpeter@sztaki.hu>", "Gaál Botond <gaalbotond@sztaki.hu>", "Palkovits Máté <palkovitsmate@sztaki.hu>"]
 license = "UNLICENSED"
 packages = [
   # Change this to the name of the folder in src/ containing your extension
-  { include = "skybrush_ext_libmotioncapture", from = "src" }
+  { include = "skybrush_ext_libmotioncapture", from = "src" },
+  { include = "skybrush_ext_aimotionlab", from = "src" }  
 ]
 
 [[tool.poetry.source]]
@@ -31,6 +32,7 @@ flockwave-server = { git = "https://github.com/skybrush-io/skybrush-server", bra
 # configuration files, and the value to the name of the Python module that
 # contains the extension code
 libmotioncapture = "skybrush_ext_libmotioncapture"
+ext_aimotionlab="skybrush_ext_aimotionlab"
 
 [tool.poetry.scripts]
 skybrushd = "flockwave.server.launcher:start"

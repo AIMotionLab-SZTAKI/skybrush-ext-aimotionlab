@@ -39,6 +39,9 @@
           }
         ]
       }
-    }
+    },
+    "ext_aimotionlab": {
+      "configWord": "This is a config word for the aimotionlab extension"
+    },
   }
 }
