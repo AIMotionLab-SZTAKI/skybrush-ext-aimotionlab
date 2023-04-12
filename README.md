@@ -1,5 +1,5 @@
-libmotioncapture extension for Skybrush Server
-==============================================
+libmotioncapture extension and SZTAKI-aimotionlab extension for Skybrush Server
+==============================================================================
 
 This repository contains an experimental extension module to Skybrush Server
 that adds support for multiple mocap systems via an abstraction layer offered
@@ -8,21 +8,23 @@ by `libmotioncapture` for indoor drone tracking.
 Installation
 ------------
 
-1. Check out this repository using git.
+1. Check out the libmotioncapture repository: 
+   https://github.com/IMRCLab/libmotioncapture
 
-2. Install [`poetry`](https://python-poetry.org) if you haven't done so yet;
+2. Compile libmotioncapture, you should get a wheel file. If you already have
+   a working wheel of the motioncapture library, you may skip these two steps.
+
+3. Check out this repository using git.
+
+4. Install [`poetry`](https://python-poetry.org) if you haven't done so yet;
    `poetry` is a tool that allows you to install Skybrush Server and the
    extension you are working on in a completely isolated virtual environment.
 
-3. Run `poetry install`; this will create a virtual environment and install
+5. Run `poetry install`; this will create a virtual environment and install
    Skybrush Server with all required dependencies in it, as well as the code
-   of the extension.
+   of the extensions.
 
-4. Run `poetry shell` to open a shell associated to the virtual environment
-   that you have just created.
+4. If any dependencies fail to install at first, you may check their status
+   with `poetry show`. If they indeed didn't install, try `poetry update`.
 
-5. Modify `skybrushd.jsonc` to point to the host where the Qualisys Track
-   Manager app is running.
-
-6. In the shell prompt, type `skybrushd -c skybrushd.jsonc` to start the server
-   with a configuration file that loads the extension.
+6. Run the server with `poetry run skybrushd -c skybrushd.jsonc`.
