@@ -31,7 +31,9 @@ Installation
    of the extensions.
 
 8. If any dependencies fail to install at first, you may check their status
-   with `poetry show`. If they indeed didn't install, try `poetry update`.
+   with `poetry show`. If they indeed didn't install, or there is an error with
+   the hash,try `poetry update`. If any extensions aren't loaded after the server
+   launches, try another `poetry install`.
 
 9. Run the server with `poetry run skybrushd -c skybrushd.jsonc`.
 
