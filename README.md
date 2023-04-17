@@ -102,10 +102,11 @@ If you are using Python 3.8 or 3.9
 5. If you tried to run the server now, you would get error messages telling you
    that you are trying to import a function called 'aclosing', which doesn't exist.
    This function (in the contextlib library) was only implemented in Python 3.10.
-   We need to make our own aclosing. Replace this import line:
+   We need to make our own aclosing. In src/skybrush_ext_libmotioncapture/channel.py 
+   replace this import line:
    `from contextlib import aclosing`
-   With the following:
-   `from contextlib import asynccontextmanager`
+   ith the following:
+   `from contextlib import asynccontextmanager`.
    And after your imports, implement this function:
    ```python
    @asynccontextmanager
