@@ -14,7 +14,7 @@
     },
     "motion_capture": {
       "enabled": true,
-      "frame_rate": 50,
+      "frame_rate": 20,
       "mapping": {
         "rules": [
           {
@@ -41,7 +41,9 @@
       }
     },
     "ext_aimotionlab": {
-      "configWord": "This is a config word for the aimotionlab extension"
+      "configWord": "This is a config word for the aimotionlab extension",
+      "port" : 1,
+      "channel" : 1,
     },
   }
 }
