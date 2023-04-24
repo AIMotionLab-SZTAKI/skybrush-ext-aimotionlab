@@ -105,7 +105,7 @@ If you are using Python 3.8 or 3.9
    We need to make our own aclosing. In src/skybrush_ext_libmotioncapture/channel.py 
    replace this import line:
    `from contextlib import aclosing`
-   ith the following:
+   with the following:
    `from contextlib import asynccontextmanager`.
    And after your imports, implement this function:
    ```python
