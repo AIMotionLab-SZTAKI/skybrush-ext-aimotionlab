@@ -44,6 +44,28 @@
       "configWord": "This is a config word for the aimotionlab extension",
       "port" : 1,
       "channel" : 1,
+      "memory_partitions": [
+        {
+            "ID": 0,
+            "start": 1,
+            "size": 100
+        },
+        {
+            "ID": 1,
+            "start": 101,
+            "size": 50
+        },
+        {
+            "ID": 2,
+            "start": 151,
+            "size": 1950
+        },
+        {
+            "ID": 3,
+            "start": 2141,
+            "size": 1950
+        },
+      ],
     },
   }
 }

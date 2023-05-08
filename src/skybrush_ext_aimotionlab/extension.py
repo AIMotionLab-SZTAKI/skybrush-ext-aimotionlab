@@ -31,6 +31,17 @@ class ext_aimotionlab(Extension):
         self._traj = b''
         self._transmission_active = False
         self._load_from_file = False
+        self._memory_partitions = None
+
+    def get_traj_type(self, traj_type: bytes) -> Tuple[bool, bool]:
+        traj_type_lower = traj_type.lower()
+        if traj_type_lower == b'relative':
+            return True, True
+        elif traj_type_lower == b'absolute':
+            return True, False
+        else:
+            return False, None
+
 
 
     def parse(self, raw_data: bytes, cmd_dict: Dict[bytes, Tuple[Callable[[Extension, CrazyflieUAV, trio.SocketStream, bytes], None], Tuple[bool, Any], bool]]):
@@ -49,7 +60,7 @@ class ext_aimotionlab(Extension):
         else:
             argument = None
         if cmd_dict[command][2]: # This is a boolean signifying that we are expecting a payload
-            self.log.info("Payload expected with command.")
+            self.log.info("Payload expected.")
             # payload = data[4]
             # self._traj = payload
             # #BUG: WHEN THE WHOLE MESSAGE GETS TRANSMITTED IN ONE, WE GET NO EOF AND UPLOAD DOESNT FINISH
@@ -61,14 +72,15 @@ class ext_aimotionlab(Extension):
             if arg < 0.1 or arg > 1.5:
                 arg = 0.5
                 self.log.warning("Takeoff height was out of allowed bounds, taking off to 0.5m")
+            if uav._airborne:
+                self.log.warning("Drone is already airborne, takeoff command wasn't dispatched.")
+                await server_stream.send_all(b"Drone is already airborne, takeoff command wasn't dispatched.")
+            else:
+                await uav.takeoff(altitude=arg)
+                await server_stream.send_all(b'Takeoff command dispatched to drone.')
+                self.log.info("Takeoff command dispatched to drone.")
         except ValueError:
             self.log.warning("Takeoff argument is not a float.")
-        if uav._airborne:
-            self.log.warning("Drone is already airborne, takeoff command wasn't dispatched.")
-        else:
-            await uav.takeoff(altitude=arg)
-            await server_stream.send_all(b'Takeoff command dispatched to drone.')
-            self.log.info("Takeoff command dispatched to drone.")
 
     async def land(self, uav: CrazyflieUAV, server_stream: trio.SocketStream, arg):
         if uav._airborne:
@@ -77,6 +89,7 @@ class ext_aimotionlab(Extension):
             self.log.info("Land command dispatched to drone.")
         else:
             self.log.warning("Drone is already on the ground, land command wasn't dispatched.")
+            await server_stream.send_all(b"Drone is already on the ground, land command wasn't dispatched.")
 
     async def start_traj(self, uav: CrazyflieUAV, server_stream: trio.SocketStream, arg: str):
         cf = uav._get_crazyflie() #access to protected member, but IDC
@@ -107,23 +120,33 @@ class ext_aimotionlab(Extension):
         self.log.info("Defined fallback hover trajectory!")
         self._hover_traj_defined = True
 
-    async def start_new_traj(self, uav: CrazyflieUAV, server_stream: trio.SocketStream, arg: str):
-        cf = uav._get_crazyflie() #access to protected member
-        if not self._hover_traj_defined:
-            await self.upload_hover(uav)
-        # read the trajectory file we just received : this will be the new trajectory we traverse
+    async def write_safely(self, traj_id: int, handler, data) -> Tuple[bool, Union[int, None]]:
+        start_addr = self._memory_partitions[traj_id]["start"]
+        allowed_size = self._memory_partitions[traj_id]["size"]
+        checksum_length = await write_with_checksum(handler, start_addr, data, only_if_changed=True)
+        self.log.info(f"Checksum length: {checksum_length}, data length: {len(data)}, allowed size: {allowed_size}")
+        if len(data)+checksum_length <= allowed_size:
+            # self.log.info(f"Wrote trajectory to address {start_addr}")
+            return True, start_addr+checksum_length
+        else:
+            return False, None
+
+    async def handle_new_traj(self, uav: CrazyflieUAV, server_stream: trio.SocketStream, arg: bytes):
         with open('./trajectory.json', 'wb') as f:
             f.write(self._traj)
             self.log.warning("Trajectory saved to local json file for backup.")
-            await server_stream.send_all(b'Trajectory saved to local file.')
-
-        try:
-            trajectory_memory = await cf.mem.find(MemoryType.TRAJECTORY)
-        except ValueError:
-            raise RuntimeError("Trajectories are not supported on this drone") from None
-        if uav.is_running_show and uav._airborne:
+            await server_stream.send_all(b'Trajectory saved to local file for backup.')
+        is_valid, is_relative = self.get_traj_type(arg)
+        if uav.is_running_show and uav._airborne and is_valid:
+            cf = uav._get_crazyflie()  # access to protected member
+            if not self._hover_traj_defined:
+                await self.upload_hover(uav)
             # initiate hover while we switch trajectories
             await cf.high_level_commander.start_trajectory(1, time_scale=1, relative=True, reversed=False)
+            try:
+                trajectory_memory = await cf.mem.find(MemoryType.TRAJECTORY)
+            except ValueError:
+                raise RuntimeError("Trajectories are not supported on this drone") from None
             if self._load_from_file:
                 with open('./trajectory.json') as json_file:
                     trajectory_data = json.load(json_file)
@@ -131,36 +154,43 @@ class ext_aimotionlab(Extension):
             else:
                 trajectory_data = json.loads(self._traj.decode('utf-8'))
             trajectory = TrajectorySpecification(trajectory_data)
-            start_addr = 200
             data = encode_trajectory(trajectory, encoding=TrajectoryEncoding.COMPRESSED)
-            traj_checksum = await write_with_checksum(trajectory_memory, start_addr, data, only_if_changed=True)
-            if traj_checksum + len(data) <= 1940:
-                upcoming_traj_ID = 5 - self._active_traj_ID
-                await cf.high_level_commander.define_trajectory(upcoming_traj_ID, addr=(start_addr + traj_checksum),
-                                                                type=TrajectoryType.COMPRESSED)
+            upcoming_traj_ID = 5 - self._active_traj_ID
+            success, addr = await self.write_safely(upcoming_traj_ID, trajectory_memory, data)
+            if success:
+                await cf.high_level_commander.define_trajectory(
+                    upcoming_traj_ID, addr=addr, type=TrajectoryType.COMPRESSED)
                 self.log.info(
                     f"Defined trajectory on ID {upcoming_traj_ID} (currently active ID is {self._active_traj_ID}).")
-                await cf.high_level_commander.start_trajectory(upcoming_traj_ID, time_scale=1, relative=True,
+                await cf.high_level_commander.start_trajectory(upcoming_traj_ID, time_scale=1, relative=is_relative,
                                                                reversed=False)
                 self.log.info(f"Started trajectory on ID {upcoming_traj_ID}")
                 self._active_traj_ID = upcoming_traj_ID
             else:
-                self.log.warning(f"Trajectory is too long: {traj_checksum + len(data)} bytes")
+                self.log.warning(f"Trajectory is too long.")
         else:
             self.log.warning("Drone is not airborne, running a show. Start the hover show to upload trajectories.")
+            await server_stream.send_all(b"Drone is not airborne, running a show. Start the hover show to upload trajectories.")
+
 
     async def handle_transmission(self, uav: CrazyflieUAV, server_stream: trio.SocketStream, arg: bytes):
         await server_stream.send_all(b'Transmission of trajectory started.')
         self.log.info("Transmission of trajectory started.")
+        # Find where the json file begins
         start_index = self._stream_data.find(b'{')
-        if start_index != -1:
+        # If the command was 'traj', then a json file must follow. If it doesn't (we can't find the beginning {), then
+        # the command or the file was corrupted.
+        if start_index == -1:
+            self.log.warning("Corrupted trajectory file.")
+            return
+        else:
             self._traj = self._stream_data[start_index:]
         self._transmission_active = True
         while not self._traj.endswith(b'_EOF'):
             self._traj += await server_stream.receive_some()
         self._traj = self._traj[:-len(b'_EOF')]
         self._transmission_active = False
-        await self.start_new_traj(uav, server_stream, "relative")
+        await self.handle_new_traj(uav, server_stream, arg)
         self._traj = b''
         self.log.info("Transmission of trajectory finished.")
         await server_stream.send_all(b'Transmission of trajectory finished.')
@@ -187,6 +217,8 @@ class ext_aimotionlab(Extension):
             logger: Python logger object that the extension may use. Also
                 available as ``self.log``.
         """
+
+        self._memory_partitions = configuration.get("memory_partitions")
         port = configuration.get("port")
         channel = configuration.get("channel")
         assert self.app is not None
