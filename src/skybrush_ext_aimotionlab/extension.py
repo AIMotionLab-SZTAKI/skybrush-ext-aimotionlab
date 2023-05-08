@@ -14,6 +14,7 @@ from typing import Dict, Callable, Union, Tuple, Any
 from flockwave.server.show.trajectory import TrajectorySpecification
 from aiocflib.crazyflie.mem import write_with_checksum
 from aiocflib.crtp.crtpstack import MemoryType
+from aiocflib.utils.checksum import crc32
 import json
 
 __all__ = ("ext_aimotionlab", )
@@ -33,8 +34,11 @@ class ext_aimotionlab(Extension):
         self._load_from_file = False
         self._memory_partitions = None
 
-    def get_traj_type(self, traj_type: bytes) -> Tuple[bool, bool]:
-        traj_type_lower = traj_type.lower()
+    def get_traj_type(self, traj_type: bytes) -> Tuple[bool, Union[bool, None]]:
+        # trajectories can either be relative or absolute. This is determined by a string/bytes, but only these two
+        # values are allowed. The return tuple tells whether the argument is valid (first part) and if it's
+        # relative (second part). If it wasn't valid, we just get None for the second part.
+        traj_type_lower = traj_type.lower()  # Bit of an allowance to not be case sensitive
         if traj_type_lower == b'relative':
             return True, True
         elif traj_type_lower == b'absolute':
@@ -42,9 +46,14 @@ class ext_aimotionlab(Extension):
         else:
             return False, None
 
-
-
-    def parse(self, raw_data: bytes, cmd_dict: Dict[bytes, Tuple[Callable[[Extension, CrazyflieUAV, trio.SocketStream, bytes], None], Tuple[bool, Any], bool]]):
+    def parse(self,
+              raw_data: bytes,
+              cmd_dict: Dict[bytes, Tuple[Callable[[Extension, CrazyflieUAV, trio.SocketStream, bytes], None], Tuple[bool, Any], bool]]):
+        # Function to determine the command and its argument from the TCP port. Standard command structure is like this:
+        # b'CMDSTART_ID_command_argument_payload_EOF'. ID refers to the drone that the command must go out to. 0 refers
+        # to all drones. The command should be in the command dictionary, which contains data about each command:
+        # whether it requires an argument or not, and what kind of argument it requires. Also whether it takes a
+        # payload such as the json file containing the trajectory.
         data = raw_data.strip()
         if not data:
             return None, None
@@ -92,46 +101,49 @@ class ext_aimotionlab(Extension):
             await server_stream.send_all(b"Drone is already on the ground, land command wasn't dispatched.")
 
     async def start_traj(self, uav: CrazyflieUAV, server_stream: trio.SocketStream, arg: str):
-        cf = uav._get_crazyflie() #access to protected member, but IDC
+        cf = uav._get_crazyflie() #access to protected member
         await cf.high_level_commander.start_trajectory(1, time_scale=1, relative=False, reversed=False)
         await server_stream.send_all(b'Trajectory start command received.')
 
-    async def upload_hover(self, uav: CrazyflieUAV):
-        trajectory_data = None
-        with open('/home/aimotion-i9/Skyc files/hover.json') as json_file:
-            # upload 'fallback' hover to ID 1. Length should be about 30
-            trajectory_data = json.load(json_file)
-        cf = uav._get_crazyflie() #access to protected member, but IDC
-        try:
-            trajectory_memory = await cf.mem.find(MemoryType.TRAJECTORY)
-        except ValueError:
-            raise RuntimeError("Trajectories are not supported on this drone") from None
-        trajectory = TrajectorySpecification(trajectory_data)
-        # In the future, we will have separate spaces in the memory for the skybrush
-        # show memory and our own. For now, we are just testing, so we will be using
-        # a dummy hover skybrush show trajectory, with length 55. Just make sure
-        # start_addr is longer than the length of the skybrush show memory, so 100
-        # will suffice.
-        start_addr = 100
-        data = encode_trajectory(trajectory, encoding=TrajectoryEncoding.COMPRESSED)
-        traj_checksum = await write_with_checksum(trajectory_memory, start_addr, data, only_if_changed=True)
-        self.log.info(f"length of data+checksum for hover: {traj_checksum + len(data)}")
-        await cf.high_level_commander.define_trajectory(1, addr=(start_addr + traj_checksum), type=TrajectoryType.COMPRESSED)
-        self.log.info("Defined fallback hover trajectory!")
-        self._hover_traj_defined = True
-
     async def write_safely(self, traj_id: int, handler, data) -> Tuple[bool, Union[int, None]]:
+        # Function to upload trajectories to the drone while keeping each trajectory confined to its allotted partition.
+        # Check the configuration: For a particular trajectory ID, what is the starting address of the allowed
+        # partition, and what's its size? Return with info about whether the trajectory fits into the partition, and the
+        # start address. This start address will be slightly different from the beginning of the partition, because the
+        # data written to the partition will begin with the checksum, and only then does the trajectory data begin.
         start_addr = self._memory_partitions[traj_id]["start"]
         allowed_size = self._memory_partitions[traj_id]["size"]
-        checksum_length = await write_with_checksum(handler, start_addr, data, only_if_changed=True)
+        checksum_length = len(crc32(data))
         self.log.info(f"Checksum length: {checksum_length}, data length: {len(data)}, allowed size: {allowed_size}")
         if len(data)+checksum_length <= allowed_size:
+            checksum_length = await write_with_checksum(handler, start_addr, data, only_if_changed=True)
             # self.log.info(f"Wrote trajectory to address {start_addr}")
             return True, start_addr+checksum_length
         else:
             return False, None
 
+    async def upload_hover(self, uav: CrazyflieUAV):
+        trajectory_data = None
+        # Hover trajectory is always the same (0.0 relative setpoint)
+        with open('./hover.json') as json_file:
+            trajectory_data = json.load(json_file)
+        cf = uav._get_crazyflie() #access to protected member
+        try:
+            trajectory_memory = await cf.mem.find(MemoryType.TRAJECTORY)
+        except ValueError:
+            raise RuntimeError("Trajectories are not supported on this drone") from None
+        trajectory = TrajectorySpecification(trajectory_data)
+        data = encode_trajectory(trajectory, encoding=TrajectoryEncoding.COMPRESSED)
+        success, addr = await self.write_safely(1, trajectory_memory, data)
+        if success:
+            await cf.high_level_commander.define_trajectory(1, addr=addr, type=TrajectoryType.COMPRESSED)
+            self.log.info("Defined fallback hover trajectory!")
+        else:
+            self.log.warning(f"Trajectory is too long.")
+        self._hover_traj_defined = True
+
     async def handle_new_traj(self, uav: CrazyflieUAV, server_stream: trio.SocketStream, arg: bytes):
+        # Writing to a separate file isn't needed, but helps when debugging.
         with open('./trajectory.json', 'wb') as f:
             f.write(self._traj)
             self.log.warning("Trajectory saved to local json file for backup.")
@@ -139,14 +151,16 @@ class ext_aimotionlab(Extension):
         is_valid, is_relative = self.get_traj_type(arg)
         if uav.is_running_show and uav._airborne and is_valid:
             cf = uav._get_crazyflie()  # access to protected member
+            # If this is the first trajectory uploaded, we've not yet defined a hover trajectory: do so.
             if not self._hover_traj_defined:
                 await self.upload_hover(uav)
-            # initiate hover while we switch trajectories
+            # initiate hover while we switch trajectories so that we don't drift too far
             await cf.high_level_commander.start_trajectory(1, time_scale=1, relative=True, reversed=False)
             try:
                 trajectory_memory = await cf.mem.find(MemoryType.TRAJECTORY)
             except ValueError:
                 raise RuntimeError("Trajectories are not supported on this drone") from None
+            # We may want to load the trajectory from the backup file:
             if self._load_from_file:
                 with open('./trajectory.json') as json_file:
                     trajectory_data = json.load(json_file)
@@ -155,9 +169,11 @@ class ext_aimotionlab(Extension):
                 trajectory_data = json.loads(self._traj.decode('utf-8'))
             trajectory = TrajectorySpecification(trajectory_data)
             data = encode_trajectory(trajectory, encoding=TrajectoryEncoding.COMPRESSED)
+            # The trajectory IDs we upload to are 2 and 3, we swap between them like so:
             upcoming_traj_ID = 5 - self._active_traj_ID
-            success, addr = await self.write_safely(upcoming_traj_ID, trajectory_memory, data)
-            if success:
+            # Try to write the data (at this point we don't know whether it's too long or not, write_safely will tell)
+            write_success, addr = await self.write_safely(upcoming_traj_ID, trajectory_memory, data)
+            if write_success:
                 await cf.high_level_commander.define_trajectory(
                     upcoming_traj_ID, addr=addr, type=TrajectoryType.COMPRESSED)
                 self.log.info(
@@ -165,6 +181,7 @@ class ext_aimotionlab(Extension):
                 await cf.high_level_commander.start_trajectory(upcoming_traj_ID, time_scale=1, relative=is_relative,
                                                                reversed=False)
                 self.log.info(f"Started trajectory on ID {upcoming_traj_ID}")
+                # We are now playing the trajectory with the new ID: adjust the active ID accordingly.
                 self._active_traj_ID = upcoming_traj_ID
             else:
                 self.log.warning(f"Trajectory is too long.")
@@ -172,29 +189,31 @@ class ext_aimotionlab(Extension):
             self.log.warning("Drone is not airborne, running a show. Start the hover show to upload trajectories.")
             await server_stream.send_all(b"Drone is not airborne, running a show. Start the hover show to upload trajectories.")
 
-
     async def handle_transmission(self, uav: CrazyflieUAV, server_stream: trio.SocketStream, arg: bytes):
         await server_stream.send_all(b'Transmission of trajectory started.')
         self.log.info("Transmission of trajectory started.")
         # Find where the json file begins
         start_index = self._stream_data.find(b'{')
-        # If the command was 'traj', then a json file must follow. If it doesn't (we can't find the beginning {), then
-        # the command or the file was corrupted.
+        # If the command was 'traj', then a json file must follow. If it doesn't (we can't find the beginning b'{'),
+        # then the command or the file was corrupted.
         if start_index == -1:
             self.log.warning("Corrupted trajectory file.")
             return
         else:
             self._traj = self._stream_data[start_index:]
-        self._transmission_active = True
-        while not self._traj.endswith(b'_EOF'):
-            self._traj += await server_stream.receive_some()
-        self._traj = self._traj[:-len(b'_EOF')]
-        self._transmission_active = False
+        self._transmission_active = True  # signal we're in the middle of transmission
+        while not self._traj.endswith(b'_EOF'):  # receive data until we see that the file has ended
+            self._traj += await server_stream.receive_some()  # append the new data to the already received data
+        self._traj = self._traj[:-len(b'_EOF')]  # once finished, remove the EOF indicator
+        self._transmission_active = False  # then signal that the transmission has ended
         await self.handle_new_traj(uav, server_stream, arg)
         self._traj = b''
         self.log.info("Transmission of trajectory finished.")
         await server_stream.send_all(b'Transmission of trajectory finished.')
 
+    # The dictionary keeping track of valid commands. Should match up for the client and the server, but we validate
+    # whether an incoming command is recognized anyway. Layout is like this:
+    # command: (handler_function, (does_it_take_argument, argument_type), does_it_take_payload)
     _tcp_command_dict: Dict[bytes, Tuple[Callable[[Extension, CrazyflieUAV, trio.SocketStream, bytes], None], Tuple[bool, Any], bool]] = {
         b"takeoff": (takeoff, (True, float), False), # The command takeoff takes a float argument and expects no payload
         b"land": (land, (False, None), False), # The command land takes no argument and expects no payload
@@ -224,7 +243,6 @@ class ext_aimotionlab(Extension):
         assert self.app is not None
         signals = self.app.import_api("signals")
         broadcast = self.app.import_api("crazyflie").broadcast
-
         self.log.info("The new extension is now running.")
         await sleep(1.0)
         self.log.info("One second has passed.")
@@ -233,7 +251,6 @@ class ext_aimotionlab(Extension):
         self.log.info("Cleared trajectory.json")
 
         with ExitStack() as stack:
-
             # create a dedicated mocap frame handler
             frame_handler = AiMotionMocapFrameHandler(broadcast, port, channel)
             # subscribe to the motion capture frame signal
@@ -247,7 +264,8 @@ class ext_aimotionlab(Extension):
                     }
                 )
             )
-            # await sleep_forever()
+            # await sleep_forever() # We need *something* here that prevents exiting the context where we are subscribed
+            # to the signal. If we don't have the serve_tcp, then we need a sleep forever.
             await trio.serve_tcp(self.TCP_Server, TCP_PORT)
 
     def _on_motion_capture_frame_received(
@@ -270,11 +288,9 @@ class ext_aimotionlab(Extension):
             return
         while True:
             try:
-                # this parsing is very sloppy, should be done better:
                 self._stream_data: bytes = await server_stream.receive_some()
                 if not self._stream_data:
                     break
-
                 # If we're not in the middle of a trajectory's transition, we can handle commands:
                 if not self._transmission_active:
                     cmd, arg = self.parse(self._stream_data, self._tcp_command_dict)
@@ -290,10 +306,10 @@ class ext_aimotionlab(Extension):
                     else:
                         self.log.info(f"Command received: {cmd.decode('utf-8')}")  # Let the user know the command arrived
                         await server_stream.send_all(b'Command received: ' + cmd)  # Let the client know as well
+                        # call the appropriate handler function of the command as described in the dictionary
                         await self._tcp_command_dict[cmd][0](self, uav, server_stream, arg)
                 else:
                     pass
-
             except Exception as exc:
                 self.log.warning(f"TCP server crashed: {exc!r}")
 
