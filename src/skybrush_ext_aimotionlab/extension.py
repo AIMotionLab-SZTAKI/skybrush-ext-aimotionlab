@@ -34,6 +34,7 @@ class ext_aimotionlab(Extension):
         self._load_from_file = False
         self._save_to_local_file = False
         self._memory_partitions = None
+        self._block_transmission = False
 
     def get_traj_type(self, traj_type: bytes) -> Tuple[bool, Union[bool, None]]:
         # trajectories can either be relative or absolute. This is determined by a string/bytes, but only these two
@@ -191,27 +192,33 @@ class ext_aimotionlab(Extension):
             self.log.warning("Drone is not airborne, running a show. Start the hover show to upload trajectories.")
             await server_stream.send_all(b"Drone is not airborne, running a show. Start the hover show to upload trajectories.")
 
-    async def handle_transmission(self, uav: CrazyflieUAV, server_stream: trio.SocketStream, arg: bytes):
-        await server_stream.send_all(b'Transmission of trajectory started.')
-        self.log.info("Transmission of trajectory started.")
-        # Find where the json file begins
-        start_index = self._stream_data.find(b'{')
-        # If the command was 'traj', then a json file must follow. If it doesn't (we can't find the beginning b'{'),
-        # then the command or the file was corrupted.
-        if start_index == -1:
-            self.log.warning("Corrupted trajectory file.")
-            return
-        else:
-            self._traj = self._stream_data[start_index:]
-        self._transmission_active = True  # signal we're in the middle of transmission
-        while not self._traj.endswith(b'_EOF'):  # receive data until we see that the file has ended
-            self._traj += await server_stream.receive_some()  # append the new data to the already received data
-        self._traj = self._traj[:-len(b'_EOF')]  # once finished, remove the EOF indicator
-        self._transmission_active = False  # then signal that the transmission has ended
+        self._block_transmission = True
+
+
+    async def handle_transmission(self, server_stream: trio.SocketStream):
+        if not self._block_transmission:
+            await server_stream.send_all(b'Transmission of trajectory started.')
+            self.log.info("Transmission of trajectory started.")
+            # Find where the json file begins
+            start_index = self._stream_data.find(b'{')
+            # If the command was 'traj', then a json file must follow. If it doesn't (we can't find the beginning b'{'),
+            # then the command or the file was corrupted.
+            if start_index == -1:
+                self.log.warning("Corrupted trajectory file.")
+                return
+            else:
+                self._traj = self._stream_data[start_index:]
+            self._transmission_active = True  # signal we're in the middle of transmission
+            while not self._traj.endswith(b'_EOF'):  # receive data until we see that the file has ended
+                self._traj += await server_stream.receive_some()  # append the new data to the already received data
+            self._traj = self._traj[:-len(b'_EOF')]  # once finished, remove the EOF indicator
+            self._transmission_active = False  # then signal that the transmission has ended
+            self.log.info("Transmission of trajectory finished.")
+            await server_stream.send_all(b'Transmission of trajectory finished.')
+
+    async def traj(self, uav: CrazyflieUAV, server_stream: trio.SocketStream, arg: bytes):
+        await self.handle_transmission(server_stream)
         await self.handle_new_traj(uav, server_stream, arg)
-        self._traj = b''
-        self.log.info("Transmission of trajectory finished.")
-        await server_stream.send_all(b'Transmission of trajectory finished.')
 
     # The dictionary keeping track of valid commands. Should match up for the client and the server, but we validate
     # whether an incoming command is recognized anyway. Layout is like this:
@@ -219,7 +226,7 @@ class ext_aimotionlab(Extension):
     _tcp_command_dict: Dict[bytes, Tuple[Callable[[Extension, CrazyflieUAV, trio.SocketStream, bytes], None], Tuple[bool, Any], bool]] = {
         b"takeoff": (takeoff, (True, float), False),  # The command takeoff takes a float argument and expects no payload
         b"land": (land, (False, None), False),  # The command land takes no argument and expects no payload
-        b"traj": (handle_transmission, (True, str), True),  # The command traj takes a str argument and expects a payload
+        b"traj": (traj, (True, str), True),  # The command traj takes a str argument and expects a payload
     }
 
     async def run(self, app: "SkybrushServer", configuration, logger):
@@ -252,10 +259,6 @@ class ext_aimotionlab(Extension):
             f.write(b'')
         self.log.info("Cleared trajectory.json")
 
-        # uav_ids = list(self.app.object_registry.ids_by_type(CrazyflieUAV))
-        # uavs = [self.app.object_registry.find_by_id(ID) for ID in uav_ids]
-        # self.log.info(f"Valid IDs: {uavs}")
-
         with ExitStack() as stack:
             # create a dedicated mocap frame handler
             frame_handler = AiMotionMocapFrameHandler(broadcast, port, channel)
@@ -283,6 +286,33 @@ class ext_aimotionlab(Extension):
     ) -> None:
         handler.notify_frame(frame)
 
+    async def cmd_to_single_drone(self, cmd, ID, server_stream, arg):
+        self.log.info(f"Command received: {cmd.decode('utf-8')}")  # Let the user know the command arrived
+        await server_stream.send_all(b'Command received: ' + cmd)  # Let the client know as well
+        try:
+            uav: CrazyflieUAV = self.app.object_registry.find_by_id(ID)
+            self.log.info(f"UAV {ID} found!")
+        except KeyError:
+            self.log.warning(f"UAV by ID {ID} is not found in the client registry.")
+            return
+        # call the appropriate handler function of the command as described in the dictionary
+        await self._tcp_command_dict[cmd][0](self, uav, server_stream, arg)
+
+    async def cmd_to_all_drones(self, cmd, server_stream, arg):
+        # Check which drones are known by the server
+        uav_ids = list(self.app.object_registry.ids_by_type(CrazyflieUAV))
+        self.log.info(f"Command received: {cmd.decode('utf-8')}")  # Let the user know the command arrived
+        await server_stream.send_all(b'Command received: ' + cmd)  # Let the client know as well
+        try:
+            # Place the known drones into a list to iterate over
+            uavs = [self.app.object_registry.find_by_id(ID) for ID in uav_ids]
+            for uav in uavs:
+                await self._tcp_command_dict[cmd][0](self, uav, server_stream, arg)
+        except KeyError:
+            self.log.warning("An UAV was not found in the registry.")
+            return
+
+
     async def TCP_Server(self, server_stream: trio.SocketStream):
         uav_ids = list(self.app.object_registry.ids_by_type(CrazyflieUAV))
         self.log.info(f"Connection made to TCP client. Valid drone IDs: {uav_ids}")
@@ -306,16 +336,14 @@ class ext_aimotionlab(Extension):
                         self.log.warning(f"None-type command")
                         await server_stream.send_all(b'None-type command')
                     else:
-                        try:
-                            uav: CrazyflieUAV = self.app.object_registry.find_by_id(ID)
-                            self.log.info(f"UAV {ID} found!")
-                        except KeyError:
-                            self.log.info(f"UAV by ID {ID} is not found in the client registry.")
-                            return
-                        self.log.info(f"Command received: {cmd.decode('utf-8')}")  # Let the user know the command arrived
-                        await server_stream.send_all(b'Command received: ' + cmd)  # Let the client know as well
-                        # call the appropriate handler function of the command as described in the dictionary
-                        await self._tcp_command_dict[cmd][0](self, uav, server_stream, arg)
+                        # Allow trajectory transmission. This is then blocked after a trajectory is handled to avoid
+                        # unnecessarily uploading a trajectory several times when we transmit the trajectory to several
+                        # drones at once.
+                        self._block_transmission = False
+                        if int(ID) == 0:
+                            await self.cmd_to_all_drones(cmd, server_stream, arg)
+                        else:
+                            await self.cmd_to_single_drone(cmd, ID, server_stream, arg)
                 else:
                     pass
             except Exception as exc:
