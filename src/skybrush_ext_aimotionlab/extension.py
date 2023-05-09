@@ -24,10 +24,11 @@ TCP_PORT = 6000
 
 class ext_aimotionlab(Extension):
     """Extension that broadcasts the pose of non-UAV objects to the Crazyflie drones."""
+    _hover_traj_defined: Dict[str, bool]
     def __init__(self):
         super().__init__()
         self._active_traj_ID = 2
-        self._hover_traj_defined = False
+        # self._hover_traj_defined = False
         self._stream_data = b''
         self._traj = b''
         self._transmission_active = False
@@ -84,12 +85,12 @@ class ext_aimotionlab(Extension):
                 arg = 0.5
                 self.log.warning("Takeoff height was out of allowed bounds, taking off to 0.5m")
             if uav._airborne:
-                self.log.warning("Drone is already airborne, takeoff command wasn't dispatched.")
+                self.log.warning(f"Drone {uav.id} is already airborne, takeoff command wasn't dispatched.")
                 await server_stream.send_all(b"Drone is already airborne, takeoff command wasn't dispatched.")
             else:
                 await uav.takeoff(altitude=arg)
                 await server_stream.send_all(b'Takeoff command dispatched to drone.')
-                self.log.info("Takeoff command dispatched to drone.")
+                self.log.info(f"Takeoff command dispatched to drone {uav.id}.")
         except ValueError:
             self.log.warning("Takeoff argument is not a float.")
 
@@ -97,9 +98,9 @@ class ext_aimotionlab(Extension):
         if uav._airborne:
             await uav.land()
             await server_stream.send_all(b'Land command dispatched to drone.')
-            self.log.info("Land command dispatched to drone.")
+            self.log.info(f"Land command dispatched to drone {uav.id}.")
         else:
-            self.log.warning("Drone is already on the ground, land command wasn't dispatched.")
+            self.log.warning(f"Drone {uav.id} is already on the ground, land command wasn't dispatched.")
             await server_stream.send_all(b"Drone is already on the ground, land command wasn't dispatched.")
 
     async def start_traj(self, uav: CrazyflieUAV, server_stream: trio.SocketStream, arg: str):
@@ -139,10 +140,11 @@ class ext_aimotionlab(Extension):
         success, addr = await self.write_safely(1, trajectory_memory, data)
         if success:
             await cf.high_level_commander.define_trajectory(1, addr=addr, type=TrajectoryType.COMPRESSED)
-            self.log.info("Defined fallback hover trajectory!")
+            self.log.info(f"Defined fallback hover trajectory for drone {uav.id}!")
         else:
             self.log.warning(f"Trajectory is too long.")
-        self._hover_traj_defined = True
+        self._hover_traj_defined[uav.id] = True
+
 
     async def handle_new_traj(self, uav: CrazyflieUAV, server_stream: trio.SocketStream, arg: bytes):
         # Writing to a separate file isn't needed, but helps when debugging.
@@ -150,12 +152,11 @@ class ext_aimotionlab(Extension):
             with open('./trajectory.json', 'wb') as f:
                 f.write(self._traj)
                 self.log.warning("Trajectory saved to local json file for backup.")
-                await server_stream.send_all(b'Trajectory saved to local file for backup.')
         is_valid, is_relative = self.get_traj_type(arg)
         if uav.is_running_show and uav._airborne and is_valid:
             cf = uav._get_crazyflie()  # access to protected member
             # If this is the first trajectory uploaded, we've not yet defined a hover trajectory: do so.
-            if not self._hover_traj_defined:
+            if not self._hover_traj_defined[uav.id]:
                 await self.upload_hover(uav)
             # initiate hover while we switch trajectories so that we don't drift too far
             await cf.high_level_commander.start_trajectory(1, time_scale=1, relative=True, reversed=False)
@@ -180,16 +181,16 @@ class ext_aimotionlab(Extension):
                 await cf.high_level_commander.define_trajectory(
                     upcoming_traj_ID, addr=addr, type=TrajectoryType.COMPRESSED)
                 self.log.info(
-                    f"Defined trajectory on ID {upcoming_traj_ID} (currently active ID is {self._active_traj_ID}).")
+                    f"Defined trajectory on ID {upcoming_traj_ID} for drone {uav.id}(currently active ID is {self._active_traj_ID}).")
                 await cf.high_level_commander.start_trajectory(upcoming_traj_ID, time_scale=1, relative=is_relative,
                                                                reversed=False)
-                self.log.info(f"Started trajectory on ID {upcoming_traj_ID}")
+                self.log.info(f"Started trajectory on ID {upcoming_traj_ID} for drone {uav.id}")
                 # We are now playing the trajectory with the new ID: adjust the active ID accordingly.
                 self._active_traj_ID = upcoming_traj_ID
             else:
                 self.log.warning(f"Trajectory is too long.")
         else:
-            self.log.warning("Drone is not airborne, running a show. Start the hover show to upload trajectories.")
+            self.log.warning(f"Drone {uav.id} is not airborne, running a show. Start the hover show to upload trajectories.")
             await server_stream.send_all(b"Drone is not airborne, running a show. Start the hover show to upload trajectories.")
 
         self._block_transmission = True
@@ -315,6 +316,8 @@ class ext_aimotionlab(Extension):
 
     async def TCP_Server(self, server_stream: trio.SocketStream):
         uav_ids = list(self.app.object_registry.ids_by_type(CrazyflieUAV))
+        self._hover_traj_defined = {key: False for key in uav_ids}
+        print(self._hover_traj_defined)
         self.log.info(f"Connection made to TCP client. Valid drone IDs: {uav_ids}")
         # uav_ids_bytes = ', '.join(uav_ids).encode("utf-8")
         # await server_stream.send_all(uav_ids_bytes)
