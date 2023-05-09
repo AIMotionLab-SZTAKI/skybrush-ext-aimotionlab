@@ -10,7 +10,7 @@ from functools import partial
 from flockwave.server.ext.motion_capture import MotionCaptureFrame
 from trio import sleep_forever
 from .handler import AiMotionMocapFrameHandler
-from typing import Dict, Callable, Union, Tuple, Any
+from typing import Dict, Callable, Union, Tuple, Any, List
 from flockwave.server.show.trajectory import TrajectorySpecification
 from aiocflib.crazyflie.mem import write_with_checksum
 from aiocflib.crtp.crtpstack import MemoryType
@@ -32,6 +32,7 @@ class ext_aimotionlab(Extension):
         self._traj = b''
         self._transmission_active = False
         self._load_from_file = False
+        self._save_to_local_file = False
         self._memory_partitions = None
 
     def get_traj_type(self, traj_type: bytes) -> Tuple[bool, Union[bool, None]]:
@@ -60,7 +61,7 @@ class ext_aimotionlab(Extension):
         data = data.split(b'_')
         if data[0] != b'CMDSTART':
             return b'NO_CMDSTART', None
-        ID = data[1]
+        ID = "0" + data[1].decode("utf-8")
         command = data[2]
         if command not in cmd_dict:
             return b'WRONG_CMD', None
@@ -73,7 +74,7 @@ class ext_aimotionlab(Extension):
             # payload = data[4]
             # self._traj = payload
             # #BUG: WHEN THE WHOLE MESSAGE GETS TRANSMITTED IN ONE, WE GET NO EOF AND UPLOAD DOESNT FINISH
-        return command, argument
+        return ID, command, argument
 
     async def takeoff(self, uav: CrazyflieUAV, server_stream: trio.SocketStream, arg):
         try:
@@ -144,10 +145,11 @@ class ext_aimotionlab(Extension):
 
     async def handle_new_traj(self, uav: CrazyflieUAV, server_stream: trio.SocketStream, arg: bytes):
         # Writing to a separate file isn't needed, but helps when debugging.
-        with open('./trajectory.json', 'wb') as f:
-            f.write(self._traj)
-            self.log.warning("Trajectory saved to local json file for backup.")
-            await server_stream.send_all(b'Trajectory saved to local file for backup.')
+        if self._save_to_local_file:
+            with open('./trajectory.json', 'wb') as f:
+                f.write(self._traj)
+                self.log.warning("Trajectory saved to local json file for backup.")
+                await server_stream.send_all(b'Trajectory saved to local file for backup.')
         is_valid, is_relative = self.get_traj_type(arg)
         if uav.is_running_show and uav._airborne and is_valid:
             cf = uav._get_crazyflie()  # access to protected member
@@ -215,8 +217,8 @@ class ext_aimotionlab(Extension):
     # whether an incoming command is recognized anyway. Layout is like this:
     # command: (handler_function, (does_it_take_argument, argument_type), does_it_take_payload)
     _tcp_command_dict: Dict[bytes, Tuple[Callable[[Extension, CrazyflieUAV, trio.SocketStream, bytes], None], Tuple[bool, Any], bool]] = {
-        b"takeoff": (takeoff, (True, float), False), # The command takeoff takes a float argument and expects no payload
-        b"land": (land, (False, None), False), # The command land takes no argument and expects no payload
+        b"takeoff": (takeoff, (True, float), False),  # The command takeoff takes a float argument and expects no payload
+        b"land": (land, (False, None), False),  # The command land takes no argument and expects no payload
         b"traj": (handle_transmission, (True, str), True),  # The command traj takes a str argument and expects a payload
     }
 
@@ -250,6 +252,10 @@ class ext_aimotionlab(Extension):
             f.write(b'')
         self.log.info("Cleared trajectory.json")
 
+        # uav_ids = list(self.app.object_registry.ids_by_type(CrazyflieUAV))
+        # uavs = [self.app.object_registry.find_by_id(ID) for ID in uav_ids]
+        # self.log.info(f"Valid IDs: {uavs}")
+
         with ExitStack() as stack:
             # create a dedicated mocap frame handler
             frame_handler = AiMotionMocapFrameHandler(broadcast, port, channel)
@@ -278,14 +284,10 @@ class ext_aimotionlab(Extension):
         handler.notify_frame(frame)
 
     async def TCP_Server(self, server_stream: trio.SocketStream):
-        self.log.info("Connection made to TCP client.")
-        try:
-            #for now, let's work with only 1 drone
-            uav: CrazyflieUAV = self.app.object_registry.find_by_id("06")
-            self.log.info("UAV 06 found!")
-        except KeyError:
-            self.log.info("UAV by ID 06 is not found in the client registry.")
-            return
+        uav_ids = list(self.app.object_registry.ids_by_type(CrazyflieUAV))
+        self.log.info(f"Connection made to TCP client. Valid drone IDs: {uav_ids}")
+        # uav_ids_bytes = ', '.join(uav_ids).encode("utf-8")
+        # await server_stream.send_all(uav_ids_bytes)
         while True:
             try:
                 self._stream_data: bytes = await server_stream.receive_some()
@@ -293,7 +295,7 @@ class ext_aimotionlab(Extension):
                     break
                 # If we're not in the middle of a trajectory's transition, we can handle commands:
                 if not self._transmission_active:
-                    cmd, arg = self.parse(self._stream_data, self._tcp_command_dict)
+                    ID, cmd, arg = self.parse(self._stream_data, self._tcp_command_dict)
                     if cmd == b'NO_CMDSTART':
                         self.log.info(f"Command is missing standard CMDSTART")
                         await server_stream.send_all(b'Command is missing standard CMDSTART')
@@ -304,6 +306,12 @@ class ext_aimotionlab(Extension):
                         self.log.warning(f"None-type command")
                         await server_stream.send_all(b'None-type command')
                     else:
+                        try:
+                            uav: CrazyflieUAV = self.app.object_registry.find_by_id(ID)
+                            self.log.info(f"UAV {ID} found!")
+                        except KeyError:
+                            self.log.info(f"UAV by ID {ID} is not found in the client registry.")
+                            return
                         self.log.info(f"Command received: {cmd.decode('utf-8')}")  # Let the user know the command arrived
                         await server_stream.send_all(b'Command received: ' + cmd)  # Let the client know as well
                         # call the appropriate handler function of the command as described in the dictionary
