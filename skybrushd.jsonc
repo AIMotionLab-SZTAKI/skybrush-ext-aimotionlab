@@ -7,6 +7,7 @@
       "enabled": true
     },
     "ext_aimotionlab": {
+      "enabled": true,
       "channel": 1,
       "configWord": "This is a config word for the aimotionlab extension",
       "memory_partitions": [

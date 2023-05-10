@@ -63,7 +63,7 @@ class ext_aimotionlab(Extension):
         data = data.split(b'_')
         if data[0] != b'CMDSTART':
             return b'NO_CMDSTART', None
-        ID = "0" + data[1].decode("utf-8")
+        ID = "0" + data[1].decode("utf-8")  # TODO: fix this, this is ugly
         command = data[2]
         if command not in cmd_dict:
             return b'WRONG_CMD', None
@@ -165,7 +165,7 @@ class ext_aimotionlab(Extension):
             except ValueError:
                 raise RuntimeError("Trajectories are not supported on this drone") from None
             # We may want to load the trajectory from the backup file:
-            if self._load_from_file:
+            if self._load_from_file and self._save_to_local_file:
                 with open('./trajectory.json') as json_file:
                     trajectory_data = json.load(json_file)
                 self.log.warning("Trajectory read from local json file.")
@@ -256,9 +256,10 @@ class ext_aimotionlab(Extension):
         self.log.info("The new extension is now running.")
         await sleep(1.0)
         self.log.info("One second has passed.")
-        with open('./trajectory.json', 'wb') as f:
-            f.write(b'')
-        self.log.info("Cleared trajectory.json")
+        if self._save_to_local_file:
+            with open('./trajectory.json', 'wb') as f:
+                f.write(b'')
+            self.log.info("Cleared trajectory.json")
 
         with ExitStack() as stack:
             # create a dedicated mocap frame handler
