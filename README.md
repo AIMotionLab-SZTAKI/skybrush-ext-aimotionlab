@@ -4,6 +4,8 @@ libmotioncapture extension and SZTAKI-aimotionlab extension for Skybrush Server
 This repository contains an experimental extension module to Skybrush Server
 that adds support for multiple mocap systems via an abstraction layer offered
 by `libmotioncapture` for indoor drone tracking.
+This readme contains info about installation and setup. For information about
+how the extension works, visit the [Wiki](https://github.com/AIMotionLab-SZTAKI/skybrush-ext-aimotionlab/wiki).
 
 Before we begin
 ------------
