@@ -42,6 +42,7 @@ class ext_aimotionlab(Extension):
         # values are allowed. The return tuple tells whether the argument is valid (first part) and if it's
         # relative (second part). If it wasn't valid, we just get None for the second part.
         traj_type_lower = traj_type.lower()  # Bit of an allowance to not be case sensitive
+        # TODO: investigate whether the trajectory starts from the drone's current location
         if traj_type_lower == b'relative':
             return True, True
         elif traj_type_lower == b'absolute':
@@ -63,7 +64,10 @@ class ext_aimotionlab(Extension):
         data = data.split(b'_')
         if data[0] != b'CMDSTART':
             return b'NO_CMDSTART', None
-        ID = "0" + data[1].decode("utf-8")  # TODO: fix this, this is ugly
+        if len(data[1].decode("utf-8")) == 1:  # this means we need to add a leading 0 unfortunately
+            ID = "0" + data[1].decode("utf-8")
+        else:
+            ID = data[1].decode("utf-8")
         command = data[2]
         if command not in cmd_dict:
             return b'WRONG_CMD', None
@@ -145,7 +149,6 @@ class ext_aimotionlab(Extension):
             self.log.warning(f"Trajectory is too long.")
         self._hover_traj_defined[uav.id] = True
 
-
     async def handle_new_traj(self, uav: CrazyflieUAV, server_stream: trio.SocketStream, arg: bytes):
         # Writing to a separate file isn't needed, but helps when debugging.
         if self._save_to_local_file:
@@ -195,7 +198,6 @@ class ext_aimotionlab(Extension):
 
         self._block_transmission = True
 
-
     async def handle_transmission(self, server_stream: trio.SocketStream):
         if not self._block_transmission:
             await server_stream.send_all(b'Transmission of trajectory started.')
@@ -221,6 +223,17 @@ class ext_aimotionlab(Extension):
         await self.handle_transmission(server_stream)
         await self.handle_new_traj(uav, server_stream, arg)
 
+    async def hover(self, uav: CrazyflieUAV, server_stream: trio.SocketStream, arg):
+        if not self._hover_traj_defined[uav.id]:
+            await self.upload_hover(uav)
+        if uav._airborne:
+            cf = uav._get_crazyflie()
+            await cf.high_level_commander.start_trajectory(1, time_scale=1, relative=True, reversed=False)
+            await server_stream.send_all(b'hover command dispatched to drone.')
+            self.log.info(f"Hover command dispatched to drone {uav.id}.")
+        else:
+            self.log.warning(f"Drone {uav.id} is on the ground, if you want to do a takeoff, do so from Live")
+            await server_stream.send_all(b"Drone is already on the ground, hover command wasn't dispatched.")
     # The dictionary keeping track of valid commands. Should match up for the client and the server, but we validate
     # whether an incoming command is recognized anyway. Layout is like this:
     # command: (handler_function, (does_it_take_argument, argument_type), does_it_take_payload)
@@ -228,6 +241,7 @@ class ext_aimotionlab(Extension):
         b"takeoff": (takeoff, (True, float), False),  # The command takeoff takes a float argument and expects no payload
         b"land": (land, (False, None), False),  # The command land takes no argument and expects no payload
         b"traj": (traj, (True, str), True),  # The command traj takes a str argument and expects a payload
+        b"hover": (hover, (False, None), False),
     }
 
     async def run(self, app: "SkybrushServer", configuration, logger):
@@ -314,7 +328,6 @@ class ext_aimotionlab(Extension):
             self.log.warning("An UAV was not found in the registry.")
             return
 
-
     async def TCP_Server(self, server_stream: trio.SocketStream):
         uav_ids = list(self.app.object_registry.ids_by_type(CrazyflieUAV))
         self._hover_traj_defined = {key: False for key in uav_ids}
@@ -323,12 +336,12 @@ class ext_aimotionlab(Extension):
         # uav_ids_bytes = ', '.join(uav_ids).encode("utf-8")
         # await server_stream.send_all(uav_ids_bytes)
         while True:
-            try:
-                self._stream_data: bytes = await server_stream.receive_some()
-                if not self._stream_data:
-                    break
-                # If we're not in the middle of a trajectory's transition, we can handle commands:
-                if not self._transmission_active:
+            # If we're not in the middle of a trajectory's transition, we can handle commands:
+            if not self._transmission_active:
+                try:
+                    self._stream_data: bytes = await server_stream.receive_some()
+                    if not self._stream_data:
+                        break
                     ID, cmd, arg = self.parse(self._stream_data, self._tcp_command_dict)
                     if cmd == b'NO_CMDSTART':
                         self.log.info(f"Command is missing standard CMDSTART")
@@ -348,10 +361,8 @@ class ext_aimotionlab(Extension):
                             await self.cmd_to_all_drones(cmd, server_stream, arg)
                         else:
                             await self.cmd_to_single_drone(cmd, ID, server_stream, arg)
-                else:
-                    pass
-            except Exception as exc:
-                self.log.warning(f"TCP server crashed: {exc!r}")
+                except Exception as exc:
+                    self.log.warning(f"TCP server crashed: {exc!r}")
 
 
 

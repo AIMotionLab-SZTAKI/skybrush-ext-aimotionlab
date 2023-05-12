@@ -9,6 +9,7 @@ commands = {
     b"takeoff": ((True, float), False),
     b"traj": ((True, str), True),
     b"land": ((False, None), False),
+    b"hover": ((False, None), False),
 }
 
 async def build_command() -> bytes:
@@ -81,6 +82,9 @@ shortcut_dict = {
     "land": b'CMDSTART_0_land_EOF',
     "land6": b'CMDSTART_6_land_EOF',
     "land8": b'CMDSTART_8_land_EOF',
+    "hover": b'CMDSTART_0_hover_EOF',
+    "hover6": b'CMDSTART_6_hover_EOF',
+    "hover8": b'CMDSTART_8_hover_EOF',
     "cw": cw(str(0)),
     "cw6": cw(str(6)),
     "cw8": cw(str(8)),
