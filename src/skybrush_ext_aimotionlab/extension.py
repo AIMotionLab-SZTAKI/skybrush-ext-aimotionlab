@@ -36,6 +36,7 @@ class ext_aimotionlab(Extension):
         self._save_to_local_file = False
         self._memory_partitions = None
         self._block_transmission = False
+        self._allow_traj_outside_show = True
 
     def get_traj_type(self, traj_type: bytes) -> Tuple[bool, Union[bool, None]]:
         # trajectories can either be relative or absolute. This is determined by a string/bytes, but only these two
@@ -156,7 +157,7 @@ class ext_aimotionlab(Extension):
                 f.write(self._traj)
                 self.log.warning("Trajectory saved to local json file for backup.")
         is_valid, is_relative = self.get_traj_type(arg)
-        if uav.is_running_show and uav._airborne and is_valid:
+        if (uav.is_running_show or self._allow_traj_outside_show) and uav._airborne and is_valid:
             cf = uav._get_crazyflie()  # access to protected member
             # If this is the first trajectory uploaded, we've not yet defined a hover trajectory: do so.
             if not self._hover_traj_defined[uav.id]:
@@ -193,8 +194,8 @@ class ext_aimotionlab(Extension):
             else:
                 self.log.warning(f"Trajectory is too long.")
         else:
-            self.log.warning(f"Drone {uav.id} is not airborne, running a show. Start the hover show to upload trajectories.")
-            await server_stream.send_all(b"Drone is not airborne, running a show. Start the hover show to upload trajectories.")
+            self.log.warning(f"Drone {uav.id} is not airborne. Start the hover show to upload trajectories.")
+            await server_stream.send_all(b"Drone is not airborne. Start the hover show to upload trajectories.")
 
         self._block_transmission = True
 

@@ -12,6 +12,7 @@ commands = {
     b"hover": ((False, None), False),
 }
 
+
 async def build_command() -> bytes:
     # Prompt user for ID (integer from 0 to 9)
     while True:
@@ -65,15 +66,24 @@ async def sender(client_stream: trio.SocketStream):
         print(f"sender: sending {data}")
         await trio.sleep(0.5)
 
+
 def cw(ID):
     with open (f"cw_traj.json", 'rb') as f:
         payload = f.read()
     return b'CMDSTART_'+ ID.encode('utf-8') + b'_traj_relative_' + payload + b'_EOF'
 
+
 def ccw(ID):
     with open (f"ccw_traj.json", 'rb') as f:
         payload = f.read()
     return b'CMDSTART_'+ ID.encode('utf-8') + b'_traj_relative_' + payload + b'_EOF'
+
+
+def traj(ID):
+    with open (f"trajectory.json", 'rb') as f:
+        payload = f.read()
+    return b'CMDSTART_'+ ID.encode('utf-8') + b'_traj_relative_' + payload + b'_EOF'
+
 
 shortcut_dict = {
     "takeoff": b'CMDSTART_0_takeoff_0.6_EOF',
@@ -91,7 +101,9 @@ shortcut_dict = {
     "ccw": ccw(str(0)),
     "ccw6": ccw(str(6)),
     "ccw8": ccw(str(8)),
+    "traj": traj(str(0))
 }
+
 
 async def shortcut_sender(client_stream: trio.SocketStream):
     print("sender: Started!")
@@ -105,14 +117,16 @@ async def shortcut_sender(client_stream: trio.SocketStream):
             print("No such command shortcut.")
         await trio.sleep(0.5)
 
+
 async def receiver(client_stream):
     print("receiver: started!")
     async for data in client_stream:
         if type(data) == bytes:
             data = data.decode("utf-8")
-        print(f"receiver: got data {data}")
+        print(f"receiver: got the following data: {data}")
     print("receiver: connection closed")
     sys.exit()
+
 
 async def parent():
     # client_stream = await trio.open_tcp_stream("192.168.1.78", PORT)

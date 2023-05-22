@@ -32,7 +32,6 @@ class AiMotionMocapFrameHandler:
                         w, x, y, z = item.attitude
                         poses.append((numeric_id + self._cur_id, item.position, QuaternionXYZW(x, y, z, w)))
                         self._cur_id = 1 - self._cur_id
-        # print("Starting to broadcast the poses: " + str(poses))
         for chunk in chunks(poses, 2):
             packet = bytes(
                 [GenericLocalizationCommand.EXT_POSE_PACKED]
