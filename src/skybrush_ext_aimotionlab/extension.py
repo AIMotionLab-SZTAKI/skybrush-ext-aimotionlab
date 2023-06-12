@@ -15,6 +15,7 @@ from flockwave.server.show.trajectory import TrajectorySpecification
 from aiocflib.crazyflie.mem import write_with_checksum
 from aiocflib.crtp.crtpstack import MemoryType
 from aiocflib.utils.checksum import crc32
+from aiocflib.crazyflie.log import LogSession
 import json
 
 __all__ = ("ext_aimotionlab", )
@@ -309,11 +310,11 @@ class ext_aimotionlab(Extension):
         try:
             uav: CrazyflieUAV = self.app.object_registry.find_by_id(ID)
             self.log.info(f"UAV {ID} found!")
+            # call the appropriate handler function of the command as described in the dictionary
+            await self._tcp_command_dict[cmd][0](self, uav, server_stream, arg)
         except KeyError:
             self.log.warning(f"UAV by ID {ID} is not found in the client registry.")
             return
-        # call the appropriate handler function of the command as described in the dictionary
-        await self._tcp_command_dict[cmd][0](self, uav, server_stream, arg)
 
     async def cmd_to_all_drones(self, cmd, server_stream, arg):
         # Check which drones are known by the server

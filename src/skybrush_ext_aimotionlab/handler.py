@@ -36,7 +36,8 @@ class AiMotionMocapFrameHandler:
             packet = bytes(
                 [GenericLocalizationCommand.EXT_POSE_PACKED]
             ) + Localization.encode_external_pose_packed(chunk)
-            # print(f"Broadcasting with time stamp: {time()}")
+            # print(f"Broadcasting on channel {self._channel} and port {self._port} with time stamp: {time()}")
+            #TODO: when there are two radios available, the drone doesn't receive the correct packets.
             self._broadcast(
                 self._port,
                 self._channel,

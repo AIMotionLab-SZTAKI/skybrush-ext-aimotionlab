@@ -7,9 +7,9 @@
       "enabled": true
     },
     "ext_aimotionlab": {
-      "enabled": true,
       "channel": 1,
       "configWord": "This is a config word for the aimotionlab extension",
+      "enabled": true,
       "memory_partitions": [
         {
           "ID": 0,
