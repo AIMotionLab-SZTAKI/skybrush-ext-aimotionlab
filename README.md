@@ -1,3 +1,9 @@
+DEPRECATION/ARCHIVE WARNING
+==============================================================================
+As of june 2023, this extension was vendored into the skybrush server fork of aimotionlab:
+https://github.com/AIMotionLab-SZTAKI/skybrush-server.
+The changes made to the extension there make this repository deprecated, so it's now archived.
+
 libmotioncapture extension and SZTAKI-aimotionlab extension for Skybrush Server
 ==============================================================================
 
